@@ -74,6 +74,12 @@ load_settings()
 async def on_ready():
     load_times()
     print("Loaded times")
+    # do not run if new server
+    for guild in bot.guilds:
+        guild_id = str(guild.id) 
+        if guild_id not in server_settings.keys():
+            return
+    
     for channel_id, last_time in last_message_time.items():
         print(channel_id)
         channel = bot.get_channel(channel_id)
@@ -150,7 +156,28 @@ async def helpme(ctx):
     setting_graveyard = server_settings[guild_id]["graveyard"]
     setting_inactive_time = server_settings[guild_id]["inactive_time"]
 
-    inactive_time_formatted = time.strftime('%H:%M:%S', time.gmtime(setting_inactive_time))
+    duration = datetime.timedelta(seconds=setting_inactive_time)
+        
+    # Extract days, hours, minutes, seconds
+    days = duration.days
+    hours = duration.seconds // 3600
+    minutes = (duration.seconds % 3600) // 60
+    seconds = duration.seconds % 60
+
+    # Build human-readable string
+    parts = []
+    if days > 0:
+        parts.append(f"{days} day{'s' if days != 1 else ''}")
+    if hours > 0:
+        parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+    if minutes > 0:
+        parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+    if seconds > 0:
+        parts.append(f"{seconds} second{'s' if seconds != 1 else ''}")
+
+
+
+    inactive_time_formatted = ' '.join(parts)
 
     await ctx.send("User commands\n"
                    "--------------------\n"

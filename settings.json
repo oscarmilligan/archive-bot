@@ -4,5 +4,11 @@
         "inactive_role": "dead",
         "graveyard": "graveyard",
         "inactive_time": 60
+    },
+    "1405696359956480071": {
+        "misc": true,
+        "inactive_role": "dead",
+        "graveyard": "graveyard",
+        "inactive_time": 604800
     }
 }
