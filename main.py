@@ -10,7 +10,6 @@ import time
 
 # TODO: Add voice channel archiving (and setting for it)
 # TODO: Add exempt text channels
-# TODO: command to display archive timers
 # TODO: Add user archiving
 # TODO: Add a permission role
 # TODO: Don't send archive message from archive
@@ -321,8 +320,9 @@ async def archive_channel(channel):
     graveyard = server_settings[guild_id]["graveyard"]
     category = discord.utils.get(channel.guild.categories, name=graveyard)
     print("found graveyard")
+    if channel.category != category:
+        await channel.send(f"This channel: {channel} has been archived")
     await channel.edit(category=category)
-    await channel.send(f"This channel: {channel} has been archived")
 
 async def get_last_message_time(channel):
     print("Getting last message time in",channel.name)
@@ -376,5 +376,13 @@ async def hello(ctx):
     guild_id = str(ctx.guild.id)
     if server_settings[guild_id]["misc"]:
         await ctx.send(f"Hello {ctx.author.mention}!")
+
+@bot.command()
+async def doxdexter(ctx):
+    guild_id = str(ctx.guild.id)
+    if server_settings[guild_id]["misc"]:
+        await ctx.send(f"53.1464° N, 0.3379° E")
+    
+
 
 bot.run(token, log_handler=handler, log_level=logging.DEBUG)
