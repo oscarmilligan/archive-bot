@@ -82,8 +82,15 @@ async def on_ready():
     
     for channel_id, last_time in last_message_time.items():
         print(channel_id)
+        guild_id = str(channel.guild.id)
+        graveyard = server_settings[guild_id]["graveyard"]
+        category = discord.utils.get(channel.guild.categories, name=graveyard)
+
         channel = bot.get_channel(channel_id)
         if channel:
+            # skip graveyard channels
+            if channel.category == category:
+                continue
             print(last_time)
             print(datetime.datetime.now(datetime.UTC))
             delta = datetime.datetime.now(datetime.UTC)-last_time
@@ -94,16 +101,8 @@ async def on_ready():
                 if guild_id not in server_settings.keys():
                     continue
                 print(guild_id)
-                inactive_time = server_settings[guild_id]["inactive_time"]
-                print(inactive_time,"DELTA:",delta,type(delta))
-                if delta >= 0:
-                    print("Delta greater than 0 (as expected)")
-                    time_left = inactive_time-delta
-                    print("TIME LEFT:",time_left)
-                    if time_left < 0:
-                        time_left = 1
-                else:
-                    time_left = 1
+                time_left = await calculate_remaining_time(channel)
+                if time_left == -1: time_left = 1
                 print(f"Creating task for {channel_id} with time left: {time_left}")
                 scheduled_tasks[channel_id] = asyncio.create_task(schedule_archive(channel, time_left))
     print(f"Bot is ready and tasks rescheduled for {len(scheduled_tasks)} channels.")
@@ -130,7 +129,7 @@ async def on_message(message):
     # store message time
     last_message_time[channel_id] = message.created_at
     save_times()
-    print(2)
+    print("Message sent at:",message.created_at)
     # Cancel previous task if it exists
     if channel_id in scheduled_tasks:
         scheduled_tasks[channel_id].cancel()
@@ -148,6 +147,28 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
+@bot.event
+async def on_guild_channel_create(channel):
+    
+    guild_id = str(channel.guild.id)  # safe string key
+    inactive_time = server_settings[guild_id]["inactive_time"]
+    print("Getting timers")
+    graveyard = server_settings[guild_id]["graveyard"]
+    category = discord.utils.get(channel.guild.categories, name=graveyard)
+    print("found graveyard")
+    if channel.category == category:
+        print(f"{channel.name} in graveyard")
+        return
+    
+    last_message_time[channel.id] = channel.created_at
+    # Cancel previous task if it exists
+    if channel.id in scheduled_tasks:
+        scheduled_tasks[channel.id].cancel()
+
+    # Schedule a new task
+    scheduled_tasks[channel.id] = asyncio.create_task(schedule_archive(channel, inactive_time))
+
+
 @bot.command()
 async def helpme(ctx):
     guild_id = str(ctx.guild.id)
@@ -156,32 +177,12 @@ async def helpme(ctx):
     setting_graveyard = server_settings[guild_id]["graveyard"]
     setting_inactive_time = server_settings[guild_id]["inactive_time"]
 
-    duration = datetime.timedelta(seconds=setting_inactive_time)
-        
-    # Extract days, hours, minutes, seconds
-    days = duration.days
-    hours = duration.seconds // 3600
-    minutes = (duration.seconds % 3600) // 60
-    seconds = duration.seconds % 60
-
-    # Build human-readable string
-    parts = []
-    if days > 0:
-        parts.append(f"{days} day{'s' if days != 1 else ''}")
-    if hours > 0:
-        parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
-    if minutes > 0:
-        parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
-    if seconds > 0:
-        parts.append(f"{seconds} second{'s' if seconds != 1 else ''}")
-
-
-
-    inactive_time_formatted = ' '.join(parts)
+    inactive_time_formatted = format_time(setting_inactive_time)
 
     await ctx.send("User commands\n"
                    "--------------------\n"
                     f"!helpme: Brings up this menu\n"
+                    f"!timers: Get remaining time for each channel\n"
                     f"!assign: Manually add inactive role to self (WIP)\n"
                     f"!remove: Manually remove inactive role from self (WIP)\n"
                     "\n"
@@ -252,6 +253,7 @@ async def graveyard(ctx, message):
 
 @bot.command()
 async def inactivetime(ctx, digit, units):
+    global last_message_time
     guild_id = str(ctx.guild.id)
     if digit.isdigit():
         t=int(digit)
@@ -266,9 +268,34 @@ async def inactivetime(ctx, digit, units):
 
         server_settings[guild_id]["inactive_time"] = t
         await ctx.send(f"The inactive time has been set to {digit+units}")
+        await timers(ctx)
+        save_settings()
     else:
         await ctx.send(f"Inactive time must be a number")
-    save_settings()
+
+@bot.command()
+async def timers(ctx):
+    global server_settings
+    guild_id = str(ctx.guild.id)  # safe string key
+    print("Getting timers")
+    graveyard = server_settings[guild_id]["graveyard"]
+    category = discord.utils.get(ctx.guild.categories, name=graveyard)
+    print("found graveyard")
+    for channel in ctx.guild.text_channels:
+        print(f"Looking at {channel.name}")
+        if channel.category == category:
+            print(f"{channel.name} in graveyard")
+            continue
+        
+        # Cancel previous task if it exists
+        if channel.id in scheduled_tasks:
+            scheduled_tasks[channel.id].cancel()
+
+        remaining_time = await calculate_remaining_time(channel)
+        # Schedule a new task
+        scheduled_tasks[channel.id] = asyncio.create_task(schedule_archive(channel, remaining_time))
+
+        await ctx.send(f"{channel.mention}: {format_time(remaining_time)}")
 
 async def schedule_archive(channel, time):
     print("scheduling archive")
@@ -290,23 +317,58 @@ async def schedule_archive(channel, time):
 async def archive_channel(channel):
     global server_settings
     guild_id = str(channel.guild.id)
-    print("found guild id",guild_id)
+    print("found guild id",guild_id,type(guild_id))
     graveyard = server_settings[guild_id]["graveyard"]
     category = discord.utils.get(channel.guild.categories, name=graveyard)
     print("found graveyard")
     await channel.edit(category=category)
     await channel.send(f"This channel: {channel} has been archived")
-# @bot.command()
-# async def manualcheck(ctx):
-#     channel = ctx.channel  # current channel
-#     async for msg in ctx.channel.history(limit=1):
-#         if (msg):
-#             await ctx.send(f"Last message by {msg.author} at {msg.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
-#         else:
-#             await ctx.send("No messages found in this channel.")
-#         return  # stop after the first message
+
+async def get_last_message_time(channel):
+    print("Getting last message time in",channel.name)
+    async for message in channel.history(limit=1):
+        print(f"The last message in {channel.name} is at {message.created_at}")
+        return message.created_at
+
+async def calculate_remaining_time(channel):
+    print("calculating time for: ",channel.name)
+    guild_id = str(channel.guild.id)
+    inactive_time = server_settings[guild_id]["inactive_time"]
+    if channel.id not in last_message_time.keys():
+        print("Channel not in list of active timers")
+        last_message_time[channel.id] = await get_last_message_time(channel)
+
+        # save_times()
+    delta = datetime.datetime.now(datetime.UTC)-last_message_time[channel.id]
+    delta = int(delta.total_seconds())
+
+    time_left = inactive_time-delta
+    print("Time left:",time_left if time_left > 0 else 1)
+    return time_left if time_left > 0 else 1
 
 
+def format_time(seconds):
+    
+    duration = datetime.timedelta(seconds=seconds)
+        
+    # Extract days, hours, minutes, seconds
+    days = duration.days
+    hours = duration.seconds // 3600
+    minutes = (duration.seconds % 3600) // 60
+    seconds = duration.seconds % 60
+
+    # Build human-readable string
+    parts = []
+    if days > 0:
+        parts.append(f"{days} day{'s' if days != 1 else ''}")
+    if hours > 0:
+        parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+    if minutes > 0:
+        parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+    if seconds > 0:
+        parts.append(f"{seconds} second{'s' if seconds != 1 else ''}")
+
+    return ' '.join(parts)
 
 # misc commands
 @bot.command()
@@ -314,6 +376,5 @@ async def hello(ctx):
     guild_id = str(ctx.guild.id)
     if server_settings[guild_id]["misc"]:
         await ctx.send(f"Hello {ctx.author.mention}!")
-
 
 bot.run(token, log_handler=handler, log_level=logging.DEBUG)
