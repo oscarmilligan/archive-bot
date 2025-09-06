@@ -8,11 +8,12 @@ import asyncio
 import datetime
 import time
 
-# TODO: Add voice channel archiving (and setting for it)
+# TODO: Add voice channel archive setting
 # TODO: Add exempt text channels
 # TODO: Add user archiving
 # TODO: Add a permission role
-# TODO: Don't send archive message from archive
+# TODO: change delimiter command
+# TODO: start timers on guild join
 
 
 
@@ -145,6 +146,28 @@ async def on_message(message):
                 await message.channel.send(f"{message.author.mention} just lost the game!")
 
     await bot.process_commands(message)
+
+@bot.event
+async def on_voice_state_update(member, before, after):
+    active_channel = None
+    for state in (before,after):
+        if state.channel == None:
+            continue
+        active_channel = state.channel
+        print("User has interacted with",active_channel)
+    channel_id = active_channel.id
+    guild_id = str(active_channel.guild.id)
+    inactive_time = server_settings[guild_id]["inactive_time"]
+    last_message_time[channel_id] = datetime.datetime.now(datetime.UTC)
+    
+    print(f"added {active_channel} to dict at time {last_message_time[channel_id]}")
+    save_times()
+    # Cancel previous task if it exists
+    if channel_id in scheduled_tasks:
+        scheduled_tasks[channel_id].cancel()
+    # Schedule a new task
+    scheduled_tasks[channel_id] = asyncio.create_task(schedule_archive(active_channel, inactive_time))
+    
 
 @bot.event
 async def on_guild_channel_create(channel):
@@ -294,6 +317,25 @@ async def timers(ctx):
         # Schedule a new task
         scheduled_tasks[channel.id] = asyncio.create_task(schedule_archive(channel, remaining_time))
 
+        await ctx.send(f"{channel.mention}: {format_time(remaining_time)}")#
+
+    for channel in ctx.guild.voice_channels:
+        print(f"Looking at {channel.name}")
+        if channel.category == category:
+            print(f"{channel.name} in graveyard")
+            continue
+        
+        # Cancel previous task if it exists
+        if channel.id in scheduled_tasks:
+            scheduled_tasks[channel.id].cancel()
+
+        remaining_time = await calculate_remaining_time(channel)
+        if remaining_time == -2:
+            await ctx.send(f"{channel.mention}: Bot has no recorded voice history, please join to add voice history")
+            continue
+        # Schedule a new task
+        scheduled_tasks[channel.id] = asyncio.create_task(schedule_archive(channel, remaining_time))
+
         await ctx.send(f"{channel.mention}: {format_time(remaining_time)}")
 
 async def schedule_archive(channel, time):
@@ -334,9 +376,14 @@ async def calculate_remaining_time(channel):
     print("calculating time for: ",channel.name)
     guild_id = str(channel.guild.id)
     inactive_time = server_settings[guild_id]["inactive_time"]
+    
     if channel.id not in last_message_time.keys():
         print("Channel not in list of active timers")
-        last_message_time[channel.id] = await get_last_message_time(channel)
+        if channel.type == discord.ChannelType.text:
+            last_message_time[channel.id] = await get_last_message_time(channel)
+        elif channel.type  == discord.ChannelType.voice:
+            print("Channel is voice channel")
+            return -2
 
         # save_times()
     delta = datetime.datetime.now(datetime.UTC)-last_message_time[channel.id]
