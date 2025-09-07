@@ -234,13 +234,13 @@ async def helpme(ctx):
 
     # get roles
     print("Retrieving discord roles")
-    admin_roles = [discord.utils.get(ctx.guild.roles,name=role_name) for role_name in setting_admin_roles]
+    admin_roles = [discord.utils.get(ctx.guild.roles,name=role_name) for role_name in setting_admin_roles if discord.utils.get(ctx.guild.roles,name=role_name) != None]
     print("Admin roles retrieved")
     inactive_role = discord.utils.get(ctx.guild.roles,name=setting_inactive_role)
     print("inactive_role retrieved")
 
     # role text
-    admin_text = " ".join([str(admin_role.id) for admin_role in admin_roles]) if admin_roles[0] != None else "Not set"
+    admin_text = " ".join([str(admin_role.id) for admin_role in admin_roles]) if len(admin_roles) != 0 else "Not set"
     inactive_text = inactive_role.id  if inactive_role != None else "Not set"
 
     sent = await ctx.send("User commands\n"
@@ -255,8 +255,13 @@ async def helpme(ctx):
                     f"!reset-settings: Resets settings to default"
                     f"!graveyard (category): Set the archive category to (category)\n"
                     f"!inactive-time (time) (s/m/h/d): Set the inactivity timer\n"
-                    f"!misc: Turn on/off miscellaneous mode\n"
                     f"!inactive-role (role): Set the inactive role to (role)\n"
+                    f"!add-admin-role (role): Bot considers (role) to be an admin\n"
+                    f"!remove-admin-role (role): Bot no longer considers (role) to be an admin\n"
+                    f"!toggle-text-archive: Turn on/off text archiving\n"
+                    f"!toggle-voice-archive: Turn on/off voice archiving\n"
+                    f"!toggle-inactive-role: Turn on/off inactivity role\n"
+                    f"!toggle-misc: Turn on/off miscellaneous mode\n"
                     "\n"
                     "Settings\n"
                     "-------------------\n"
@@ -268,20 +273,21 @@ async def helpme(ctx):
                     f"Inactivity timer: {inactive_time_formatted}\n"
                     f"Inactive Role: {inactive_text}\n"
                     f"Admin Roles: {admin_text}\n"
-                    f"Misc: {setting_misc}\n")
+                    f"Miscellaneous mode: {setting_misc}\n")
     
     # replace roles in text
     print("Replacing roles with mentions without pinging")
     print(admin_roles,inactive_role)
     roles = []
-    if admin_roles[0] != None:
+    if len(admin_roles) != 0:
         roles += admin_roles
-    if inactive_role != None: 
+    if inactive_role != None and inactive_role not in admin_roles: 
         roles += [inactive_role]
     print("Made roles list")
     edited = sent.content
     for role in roles:
         if str(role.id) in edited:
+            print(f"editing {role.id} to {role.mention}")
             edited = edited.replace(str(role.id),role.mention)
     await sent.edit(content=edited)
 
@@ -299,11 +305,32 @@ async def reset_settings(ctx):
                                     "admin_roles": DEFAULT_ADMIN_ROLES}
     save_settings()
 
-@bot.command()
+@bot.command("toggle-misc")
 async def misc(ctx):
     guild_id = str(ctx.guild.id)
     server_settings[guild_id]["misc"] = not(server_settings[guild_id]["misc"])
     await ctx.send(f"Miscellaneous mode: {server_settings[guild_id]["misc"]}")
+    save_settings()
+
+@bot.command("toggle-text-archive")
+async def toggletextarchive(ctx):
+    guild_id = str(ctx.guild.id)
+    server_settings[guild_id]["do_text_archive"] = not(server_settings[guild_id]["do_text_archive"])
+    await ctx.send(f"Text archiving: {server_settings[guild_id]["do_text_archive"]}")
+    save_settings()
+
+@bot.command("toggle-voice-archive")
+async def togglevoicearchive(ctx):
+    guild_id = str(ctx.guild.id)
+    server_settings[guild_id]["do_voice_archive"] = not(server_settings[guild_id]["do_voice_archive"])
+    await ctx.send(f"Voice archiving: {server_settings[guild_id]["do_voice_archive"]}")
+    save_settings()
+
+@bot.command("toggle-inactive-role")
+async def toggleinactiverole(ctx):
+    guild_id = str(ctx.guild.id)
+    server_settings[guild_id]["do_user_archive"] = not(server_settings[guild_id]["do_user_archive"])
+    await ctx.send(f"Use inactive role: {server_settings[guild_id]["do_user_archive"]}")
     save_settings()
 
 @bot.command()
@@ -343,6 +370,37 @@ async def inactiverole(ctx, message):
         await ctx.send(f"Role:{message} does not exist")
     save_settings()
 
+@bot.command("add-admin-role")
+async def addadminrole(ctx, message):
+    guild_id = str(ctx.guild.id)
+    role = discord.utils.get(ctx.guild.roles, name=message)
+    if role:
+        if message in server_settings[guild_id]["admin_roles"]:
+            await ctx.send(f"{role.id} is already a bot admin")
+            edited = sent.content.replace(str(role.id),role.mention)
+            await sent.edit(content=edited)
+            return
+        server_settings[guild_id]["admin_roles"].append(message)
+        sent = await ctx.send(f"{role.id} is now a bot admin")
+        edited = sent.content.replace(str(role.id),role.mention)
+        await sent.edit(content=edited)
+    else:
+        await ctx.send(f"Role:{message} does not exist")
+    save_settings()
+
+@bot.command("remove-admin-role")
+async def removeadminrole(ctx, message):
+    guild_id = str(ctx.guild.id)
+    role = discord.utils.get(ctx.guild.roles, name=message)
+    if role:
+        server_settings[guild_id]["admin_roles"].remove(message)
+        sent = await ctx.send(f"{role.id} is no longer a bot admin")
+        edited = sent.content.replace(str(role.id),role.mention)
+        await sent.edit(content=edited)
+    else:
+        await ctx.send(f"Role:{message} does not exist")
+    save_settings()
+
 @bot.command()
 async def graveyard(ctx, message):
     guild_id = str(ctx.guild.id)
@@ -376,48 +434,54 @@ async def inactivetime(ctx, digit, units):
     else:
         await ctx.send(f"Inactive time must be a number")
 
+
+
 @bot.command()
 async def timers(ctx):
     global server_settings
     guild_id = str(ctx.guild.id)  # safe string key
     print("Getting timers")
     graveyard = server_settings[guild_id]["graveyard"]
+    do_text_archive = server_settings[guild_id]["do_text_archive"]
+    do_voice_archive = server_settings[guild_id]["do_voice_archive"]
     category = discord.utils.get(ctx.guild.categories, name=graveyard)
     print("found graveyard")
-    for channel in ctx.guild.text_channels:
-        print(f"Looking at {channel.name}")
-        if channel.category == category:
-            print(f"{channel.name} in graveyard")
-            continue
-        
-        # Cancel previous task if it exists
-        if channel.id in scheduled_tasks:
-            scheduled_tasks[channel.id].cancel()
+    if do_text_archive:
+        for channel in ctx.guild.text_channels:
+            print(f"Looking at {channel.name}")
+            if channel.category == category:
+                print(f"{channel.name} in graveyard")
+                continue
+            
+            # Cancel previous task if it exists
+            if channel.id in scheduled_tasks:
+                scheduled_tasks[channel.id].cancel()
 
-        remaining_time = await calculate_remaining_time(channel)
-        # Schedule a new task
-        scheduled_tasks[channel.id] = asyncio.create_task(schedule_archive(archive_channel,channel, remaining_time))
+            remaining_time = await calculate_remaining_time(channel)
+            # Schedule a new task
+            scheduled_tasks[channel.id] = asyncio.create_task(schedule_archive(archive_channel,channel, remaining_time))
 
-        await ctx.send(f"{channel.mention}: {format_time(remaining_time)}")#
+            await ctx.send(f"{channel.mention}: {format_time(remaining_time)}")#
 
-    for channel in ctx.guild.voice_channels:
-        print(f"Looking at {channel.name}")
-        if channel.category == category:
-            print(f"{channel.name} in graveyard")
-            continue
-        
-        # Cancel previous task if it exists
-        if channel.id in scheduled_tasks:
-            scheduled_tasks[channel.id].cancel()
+    if do_voice_archive:
+        for channel in ctx.guild.voice_channels:
+            print(f"Looking at {channel.name}")
+            if channel.category == category:
+                print(f"{channel.name} in graveyard")
+                continue
+            
+            # Cancel previous task if it exists
+            if channel.id in scheduled_tasks:
+                scheduled_tasks[channel.id].cancel()
 
-        remaining_time = await calculate_remaining_time(channel)
-        if remaining_time == -2:
-            await ctx.send(f"{channel.mention}: Bot has no recorded voice history, please join to add voice history")
-            continue
-        # Schedule a new task
-        scheduled_tasks[channel.id] = asyncio.create_task(schedule_archive(archive_channel, archive_channel,channel, remaining_time))
+            remaining_time = await calculate_remaining_time(channel)
+            if remaining_time == -2:
+                await ctx.send(f"{channel.mention}: Bot has no recorded voice history, please join to add voice history")
+                continue
+            # Schedule a new task
+            scheduled_tasks[channel.id] = asyncio.create_task(schedule_archive(archive_channel, archive_channel,channel, remaining_time))
 
-        await ctx.send(f"{channel.mention}: {format_time(remaining_time)}")
+            await ctx.send(f"{channel.mention}: {format_time(remaining_time)}")
 
 async def schedule_archive(archive_func, channel, time):
     print(f"scheduling archive of: {channel.name} {channel.id}")
