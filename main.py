@@ -14,6 +14,7 @@ import time
 # TODO: Add user archiving
 # TODO: Add permission role function
 # TODO: change delimiter command
+# TODO: merge toggle commands
 
 
 
@@ -88,8 +89,20 @@ DEFAULT_INACTIVE_TIME = 60*60*24*7
 DEFAULT_DO_USER_ARCHIVE = False
 DEFAULT_DO_VOICE_ARCHIVE = False
 DEFAULT_DO_TEXT_ARCHIVE = True
-DEFAULT_BOT_ALERT_CHANNEL = ["Alerts"]
+DEFAULT_BOT_ALERT_CHANNEL = "Alerts"
 DEFAULT_ADMIN_ROLES = ["Moderator"]
+DEFAULT_INACTIVE_ROLE_PERMANENT = False
+
+DEFAULT_SETTINGS = {"misc": DEFAULT_MISC,
+                    "bot_alert_channel": DEFAULT_BOT_ALERT_CHANNEL,
+                    "inactive_role": DEFAULT_INACTIVE_ROLE,
+                    "graveyard": DEFAULT_GRAVEYARD,
+                    "inactive_time": DEFAULT_INACTIVE_TIME,
+                    "do_user_archive": DEFAULT_DO_USER_ARCHIVE,
+                    "do_voice_archive": DEFAULT_DO_VOICE_ARCHIVE,
+                    "do_text_archive": DEFAULT_DO_TEXT_ARCHIVE,
+                    "inactive_role_permanent": DEFAULT_INACTIVE_ROLE_PERMANENT,
+                    "admin_roles": DEFAULT_ADMIN_ROLES}
 
 load_settings()
 
@@ -105,15 +118,7 @@ async def on_ready():
         if guild_id not in server_settings.keys():
             print(f"Guild {guild_id} not in keys")
             guild_id = str(guild.id)  # keys must be str for JSON
-            server_settings[guild_id] = {"misc": DEFAULT_MISC,
-                                        "bot_alert_channel": DEFAULT_BOT_ALERT_CHANNEL,
-                                        "inactive_role": DEFAULT_INACTIVE_ROLE,
-                                        "graveyard": DEFAULT_GRAVEYARD,
-                                        "inactive_time": DEFAULT_INACTIVE_TIME,
-                                        "do_user_archive": DEFAULT_DO_USER_ARCHIVE,
-                                        "do_voice_archive": DEFAULT_DO_VOICE_ARCHIVE,
-                                        "do_text_archive": DEFAULT_DO_TEXT_ARCHIVE,
-                                        "admin_roles": DEFAULT_ADMIN_ROLES}
+            server_settings[guild_id] = DEFAULT_SETTINGS
             save_settings()
         
         do_text_archive = server_settings[guild_id]["do_text_archive"]
@@ -158,16 +163,7 @@ async def on_ready():
 async def on_guild_join(guild):
     guild_id = str(guild.id)  # keys must be str for JSON
     if guild_id not in server_settings:
-        server_settings[guild_id] = {"misc": DEFAULT_MISC,
-                                     "bot_alert_channel": DEFAULT_BOT_ALERT_CHANNEL,
-                                     "inactive_role": DEFAULT_INACTIVE_ROLE,
-                                     "graveyard": DEFAULT_GRAVEYARD,
-                                     "inactive_time": DEFAULT_INACTIVE_TIME,
-                                     "do_user_archive": DEFAULT_DO_USER_ARCHIVE,
-                                     "do_voice_archive": DEFAULT_DO_VOICE_ARCHIVE,
-                                     "do_text_archive": DEFAULT_DO_TEXT_ARCHIVE,
-                                     "admin_roles": DEFAULT_ADMIN_ROLES}
-        save_settings()
+        server_settings[guild_id] = DEFAULT_SETTINGS
 
 @bot.event
 async def on_message(message):
@@ -177,6 +173,9 @@ async def on_message(message):
     inactive_time = server_settings[guild_id]["inactive_time"]
     do_text_archive = server_settings[guild_id]["do_text_archive"]
     do_user_archive = server_settings[guild_id]["do_user_archive"]
+    inactive_role_permanent = server_settings[guild_id]["inactive_role_permanent"]
+    inactive_role_name = server_settings[guild_id]["inactive_role"]
+    alert_channel_name =  server_settings[guild_id]["bot_alert_channel"]
 
     if message.author == bot.user:
         return
@@ -204,6 +203,18 @@ async def on_message(message):
 
         # Schedule a new task
         scheduled_tasks[member_id] = asyncio.create_task(schedule_archive(archive_user, message.author, inactive_time))
+
+        if not inactive_role_permanent:
+            print("Checking to remove inactive role")
+            inactive_role = discord.utils.get(message.author.roles,name=inactive_role_name)
+            print("Inactive role:",inactive_role)
+            if inactive_role != None:
+                await message.author.remove_roles(inactive_role)
+                alert_channel = discord.utils.get(message.guild.channels,name=alert_channel_name)
+                await alert_channel.send(f"{message.author.mention} is no longer inactive")
+            else:
+                print("inactive role does not exist or user does not have it")
+
 
     # misc features
     if server_settings[guild_id]["misc"]:
@@ -270,6 +281,7 @@ async def helpme(ctx):
     setting_do_text_archive = server_settings[guild_id]["do_text_archive"]
     setting_admin_roles = server_settings[guild_id]["admin_roles"]
     setting_bot_alert_channel = server_settings[guild_id]["bot_alert_channel"]
+    setting_inactive_role_permanent = server_settings[guild_id]["inactive_role_permanent"]
 
     inactive_time_formatted = format_time(setting_inactive_time)
 
@@ -289,8 +301,8 @@ async def helpme(ctx):
                    "--------------------\n"
                     f"!helpme: Brings up this menu\n"
                     f"!timers: Get remaining time for each channel\n"
-                    f"!assign: Manually add inactive role to self (WIP)\n"
-                    f"!remove: Manually remove inactive role from self (WIP)\n"
+                    f"!assign: Manually add inactive role to self\n"
+                    f"!remove: Manually remove inactive role from self\n"
                     "\n"
                     "Admin commands\n"
                     "-------------------\n"
@@ -304,6 +316,7 @@ async def helpme(ctx):
                     f"!toggle-text-archive: Turn on/off text archiving\n"
                     f"!toggle-voice-archive: Turn on/off voice archiving\n"
                     f"!toggle-inactive-role: Turn on/off inactivity role\n"
+                    f"!toggle-inactive-role-permanent: Turn on/off inactivity role being permanent\n"
                     f"!toggle-misc: Turn on/off miscellaneous mode\n"
                     "\n"
                     "Settings\n"
@@ -315,6 +328,7 @@ async def helpme(ctx):
                     f"Archive category: {setting_graveyard}\n"
                     f"Inactivity timer: {inactive_time_formatted}\n"
                     f"Inactive Role: {inactive_text}\n"
+                    f"Make Inactive Role Permanent: {setting_inactive_role_permanent}\n"
                     f"Admin Roles: {admin_text}\n"
                     f"Alert Channel: {alert_channel_text}\n"
                     f"Miscellaneous mode: {setting_misc}\n")
@@ -338,15 +352,7 @@ async def helpme(ctx):
 @bot.command("reset-settings")
 async def reset_settings(ctx):
     guild_id = str(ctx.guild.id)
-    server_settings[guild_id] = {"misc": DEFAULT_MISC,
-                                    "bot_alert_channel": DEFAULT_BOT_ALERT_CHANNEL,
-                                    "inactive_role": DEFAULT_INACTIVE_ROLE,
-                                    "graveyard": DEFAULT_GRAVEYARD,
-                                    "inactive_time": DEFAULT_INACTIVE_TIME,
-                                    "do_user_archive": DEFAULT_DO_USER_ARCHIVE,
-                                    "do_voice_archive": DEFAULT_DO_VOICE_ARCHIVE,
-                                    "do_text_archive": DEFAULT_DO_TEXT_ARCHIVE,
-                                    "admin_roles": DEFAULT_ADMIN_ROLES}
+    server_settings[guild_id] = DEFAULT_SETTINGS
     save_settings()
     await ctx.send("Settings have been reset!")
 
@@ -376,6 +382,13 @@ async def toggleinactiverole(ctx):
     guild_id = str(ctx.guild.id)
     server_settings[guild_id]["do_user_archive"] = not(server_settings[guild_id]["do_user_archive"])
     await ctx.send(f"Use inactive role: {server_settings[guild_id]["do_user_archive"]}")
+    save_settings()
+
+@bot.command("toggle-inactive-role-permanent")
+async def toggleinactiverole(ctx):
+    guild_id = str(ctx.guild.id)
+    server_settings[guild_id]["inactive_role_permanent"] = not(server_settings[guild_id]["inactive_role_permanent"])
+    await ctx.send(f"Make inactive role permanent: {server_settings[guild_id]["inactive_role_permanent"]}")
     save_settings()
 
 @bot.command()
@@ -643,6 +656,9 @@ async def load_member_task(member,last_time):
     print(f"Creating task for {member.name} with time left: {time_left}")
     scheduled_tasks[member.id] = asyncio.create_task(schedule_archive(archive_user, member, time_left))
 
+
+
+
 def format_time(seconds):
     
     duration = datetime.timedelta(seconds=seconds)
@@ -665,6 +681,8 @@ def format_time(seconds):
         parts.append(f"{seconds} second{'s' if seconds != 1 else ''}")
 
     return ' '.join(parts)
+
+
 
 # misc commands
 @bot.command()
