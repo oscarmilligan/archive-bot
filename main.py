@@ -12,7 +12,7 @@ import time
 # TODO: Add exempt text channels from archive
 # TODO: Add exempt text channels from gaming
 # TODO: Add user archiving
-# TODO: Add a permission role
+# TODO: Add permission role function
 # TODO: change delimiter command
 
 
@@ -20,6 +20,7 @@ import time
 server_settings = {}  # {guild_id: {"prefix": "!", "welcome": "Hi!"}}
 scheduled_tasks = {}
 last_message_time = {}
+
 
 def save_settings():
     global server_settings
@@ -229,6 +230,7 @@ async def helpme(ctx):
     setting_do_voice_archive = server_settings[guild_id]["do_voice_archive"]
     setting_do_text_archive = server_settings[guild_id]["do_text_archive"]
     setting_admin_roles = server_settings[guild_id]["admin_roles"]
+    setting_bot_alert_channel = server_settings[guild_id]["bot_alert_channel"]
 
     inactive_time_formatted = format_time(setting_inactive_time)
 
@@ -238,11 +240,12 @@ async def helpme(ctx):
     print("Admin roles retrieved")
     inactive_role = discord.utils.get(ctx.guild.roles,name=setting_inactive_role)
     print("inactive_role retrieved")
+    alert_channel = discord.utils.get(ctx.guild.channels,name=setting_bot_alert_channel)
 
     # role text
     admin_text = " ".join([str(admin_role.id) for admin_role in admin_roles]) if len(admin_roles) != 0 else "Not set"
     inactive_text = inactive_role.id  if inactive_role != None else "Not set"
-
+    alert_channel_text = alert_channel.mention if alert_channel != None else "Not set"
     sent = await ctx.send("User commands\n"
                    "--------------------\n"
                     f"!helpme: Brings up this menu\n"
@@ -254,6 +257,7 @@ async def helpme(ctx):
                     "-------------------\n"
                     f"!reset-settings: Resets settings to default\n"
                     f"!graveyard (category): Set the archive category to (category)\n"
+                    f"!alert-channel (channel): Set the alert channel to (channel)\n"
                     f"!inactive-time (time) (s/m/h/d): Set the inactivity timer\n"
                     f"!inactive-role (role): Set the inactive role to (role)\n"
                     f"!add-admin-role (role): Bot considers (role) to be an admin\n"
@@ -273,6 +277,7 @@ async def helpme(ctx):
                     f"Inactivity timer: {inactive_time_formatted}\n"
                     f"Inactive Role: {inactive_text}\n"
                     f"Admin Roles: {admin_text}\n"
+                    f"Alert Channel: {alert_channel_text}\n"
                     f"Miscellaneous mode: {setting_misc}\n")
     
     # replace roles in text
@@ -304,6 +309,7 @@ async def reset_settings(ctx):
                                     "do_text_archive": DEFAULT_DO_TEXT_ARCHIVE,
                                     "admin_roles": DEFAULT_ADMIN_ROLES}
     save_settings()
+    await ctx.send("Settings have been reset!")
 
 @bot.command("toggle-misc")
 async def misc(ctx):
@@ -400,6 +406,18 @@ async def removeadminrole(ctx, message):
     else:
         await ctx.send(f"Role:{message} does not exist")
     save_settings()
+
+@bot.command("alert-channel")
+async def setalert(ctx, message):
+    guild_id = str(ctx.guild.id)
+    channel = discord.utils.get(ctx.guild.channels, name=message)
+    if channel:
+        server_settings[guild_id]["bot_alert_channel"] = message
+        await ctx.send(f"The bot alert channel has been set to {channel.mention}")
+    else:
+        await ctx.send(f"Channel:{message} does not exist")
+    save_settings()
+
 
 @bot.command()
 async def graveyard(ctx, message):
@@ -500,6 +518,15 @@ async def schedule_archive(archive_func, channel, time):
 
 async def archive_channel(channel):
     global server_settings
+    guild_id = str(channel.guild.id)
+    do_text_archive = server_settings[guild_id]["do_text_archive"]
+    do_voice_archive = server_settings[guild_id]["do_voice_archive"]
+
+    if channel.type == discord.ChannelType.text and not do_text_archive:
+        return
+    if channel.type == discord.ChannelType.voice and not do_voice_archive:
+        return
+    
     print(f"Archiving channel: {channel.name} {channel.id}")
     guild_id = str(channel.guild.id)
     graveyard = server_settings[guild_id]["graveyard"]
