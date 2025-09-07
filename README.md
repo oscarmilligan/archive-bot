@@ -8,7 +8,7 @@ https://discord.com/oauth2/authorize?client_id=1413580438470922320&permissions=8
 
 ## Self-Hosting
 1. Clone repository or download as a zip file and extract
-2. Create empty json files ```last_message_time.json``` and ```settings.json``` in the same folder as ```main.py```
+2. Create empty json files ```last_message_time.json```, ```last_user_time.json``` and ```settings.json``` in the same folder as ```main.py```
 3. Enter file content as ```{}```
 4. Create a bot on the [Discord developer portal](https://discord.com/developers)
 5. Create ```.env``` file in the same folder as ```main.py```

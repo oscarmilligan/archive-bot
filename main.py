@@ -20,6 +20,7 @@ import time
 server_settings = {}  # {guild_id: {"prefix": "!", "welcome": "Hi!"}}
 scheduled_tasks = {}
 last_message_time = {}
+last_user_time = {}
 
 
 def save_settings():
@@ -29,9 +30,14 @@ def save_settings():
 
 def save_times():
     global last_message_time
+    global last_user_time
     with open("last_message_time.json", "w") as f:
         # convert to iso string so datetime can be stored in json
         json.dump({k: v.isoformat() for k, v in last_message_time.items()}, f, indent=4)
+    
+    with open("last_user_time.json", "w") as f:
+        # convert to iso string so datetime can be stored in json
+        json.dump({k: v.isoformat() for k, v in last_user_time.items()}, f, indent=4)
 
 def load_settings():
     global server_settings
@@ -44,6 +50,7 @@ def load_settings():
 
 def load_times():
     global last_message_time
+    global last_user_time
     try:
         with open("last_message_time.json", "r") as f:
             data = json.load(f)
@@ -53,6 +60,15 @@ def load_times():
             print("successfully loaded last_message_time")
     except FileNotFoundError:
         last_message_time = {}
+    try:
+        with open("last_user_time.json", "r") as f:
+            data = json.load(f)
+            print("loading times:",data.items())
+            # convert iso strings back to datetime
+            last_user_time = {int(k): datetime.datetime.fromisoformat(v) for k, v in data.items()}
+            print("successfully loaded last_user_time")
+    except FileNotFoundError:
+        last_user_time = {}
 
 load_dotenv()
 token = os.getenv("DISCORD_TOKEN")
@@ -103,6 +119,7 @@ async def on_ready():
         do_text_archive = server_settings[guild_id]["do_text_archive"]
         do_user_archive = server_settings[guild_id]["do_user_archive"]
         do_voice_archive = server_settings[guild_id]["do_voice_archive"]
+        inactive_role = discord.utils.get(guild.roles, name=server_settings[guild_id]["inactive_role"])
         graveyard = server_settings[guild_id]["graveyard"]
 
         print("Creating saved channel tasks")
@@ -126,6 +143,15 @@ async def on_ready():
                     if channel.category == category:
                         continue
                     await load_channel_task(channel,last_time)
+        
+        if do_user_archive and inactive_role != None:
+            for user_id, last_time in last_user_time.items():
+                print(user_id)
+                member = guild.get_member(user_id)
+                if inactive_role in member.roles:
+                    await load_member_task()
+
+
         print(f"Bot is ready and tasks rescheduled for {len(scheduled_tasks)} channels in {guild.name}.")
 
 @bot.event
@@ -147,6 +173,7 @@ async def on_guild_join(guild):
 async def on_message(message):
     guild_id = str(message.guild.id)
     channel_id = message.channel.id
+    member_id = message.author.id
     inactive_time = server_settings[guild_id]["inactive_time"]
     do_text_archive = server_settings[guild_id]["do_text_archive"]
     do_user_archive = server_settings[guild_id]["do_user_archive"]
@@ -165,6 +192,18 @@ async def on_message(message):
 
         # Schedule a new task
         scheduled_tasks[channel_id] = asyncio.create_task(schedule_archive(archive_channel, message.channel, inactive_time))
+
+    if do_user_archive:
+        # store message time
+        last_user_time[member_id] = message.created_at
+        save_times()
+        print("Message sent at:",message.created_at)
+        # Cancel previous task if it exists
+        if member_id in scheduled_tasks:
+            scheduled_tasks[member_id].cancel()
+
+        # Schedule a new task
+        scheduled_tasks[member_id] = asyncio.create_task(schedule_archive(archive_user, message.author, inactive_time))
 
     # misc features
     if server_settings[guild_id]["misc"]:
@@ -510,6 +549,7 @@ async def schedule_archive(archive_func, channel, time):
         return
     try:
         await asyncio.sleep(time)
+        print("Inactive time is over, beginning archive")
         await archive_func(channel)
         
     except asyncio.CancelledError:
@@ -536,7 +576,8 @@ async def archive_channel(channel):
         print(f"Successfully archived: {channel.name} {channel.id}")
     await channel.edit(category=category)
 
-async def archive_user(guild,member):
+async def archive_user(member):
+    guild = member.guild
     global server_settings
     print(f"Archiving user: {member.name} {member.id}")
     guild_id = str(guild.id)
@@ -545,12 +586,12 @@ async def archive_user(guild,member):
     do_user_archive = server_settings[guild_id]["do_user_archive"]
     if not do_user_archive:
         return
-    alert_channel_name = server_settings[guild_id]["bot"]
+    alert_channel_name = server_settings[guild_id]["bot_alert_channel"]
     role = discord.utils.get(guild.roles, name=inactive_role)
-    if role in member.roles:
-        return
+    if role == None: return
+    if role in member.roles: return
     
-    alert_channel = discord.utils.get(guild.roles, name=alert_channel_name)
+    alert_channel = discord.utils.get(guild.channels, name=alert_channel_name)
     await member.add_roles(role)
     message = await alert_channel.send(f"{member.mention} has been assigned {role.id}")
     edited = message.content.replace(str(role.id),role.mention)
@@ -590,6 +631,18 @@ async def load_channel_task(channel,last_time):
     if time_left == -1: time_left = 1
     print(f"Creating task for {channel.id} with time left: {time_left}")
     scheduled_tasks[channel.id] = asyncio.create_task(schedule_archive(archive_channel, channel, time_left))
+
+async def load_member_task(member,last_time):
+    guild_id = str(member.guild.id)
+    inactive_time = server_settings[guild_id]["inactive_time"]
+
+    delta = datetime.datetime.now(datetime.UTC)-last_time
+    delta = int(delta.total_seconds())
+    time_left = inactive_time - delta
+    if time_left <= 0: time_left = 1
+    print(f"Creating task for {member.name} with time left: {time_left}")
+    scheduled_tasks[member.id] = asyncio.create_task(schedule_archive(archive_user, member, time_left))
+
 def format_time(seconds):
     
     duration = datetime.timedelta(seconds=seconds)
