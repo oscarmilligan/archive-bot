@@ -549,7 +549,7 @@ async def timers(ctx):
                 await ctx.send(f"{channel.mention}: Bot has no recorded voice history, please join to add voice history")
                 continue
             # Schedule a new task
-            scheduled_tasks[channel.id] = asyncio.create_task(schedule_archive(archive_channel, archive_channel,channel, remaining_time))
+            scheduled_tasks[channel.id] = asyncio.create_task(schedule_archive(archive_channel,channel, remaining_time))
 
             await ctx.send(f"{channel.mention}: {format_time(remaining_time)}")
 
