@@ -252,7 +252,7 @@ async def helpme(ctx):
                     "\n"
                     "Admin commands\n"
                     "-------------------\n"
-                    f"!reset-settings: Resets settings to default"
+                    f"!reset-settings: Resets settings to default\n"
                     f"!graveyard (category): Set the archive category to (category)\n"
                     f"!inactive-time (time) (s/m/h/d): Set the inactivity timer\n"
                     f"!inactive-role (role): Set the inactive role to (role)\n"
