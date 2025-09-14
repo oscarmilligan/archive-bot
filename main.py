@@ -82,27 +82,17 @@ intents.guilds = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-DEFAULT_INACTIVE_ROLE = "dead"
-DEFAULT_MISC = True
-DEFAULT_GRAVEYARD = "graveyard"
-DEFAULT_INACTIVE_TIME = 60*60*24*7
-DEFAULT_DO_USER_ARCHIVE = False
-DEFAULT_DO_VOICE_ARCHIVE = False
-DEFAULT_DO_TEXT_ARCHIVE = True
-DEFAULT_BOT_ALERT_CHANNEL = "Alerts"
-DEFAULT_ADMIN_ROLES = ["Moderator"]
-DEFAULT_INACTIVE_ROLE_PERMANENT = False
 
-DEFAULT_SETTINGS = {"misc": DEFAULT_MISC,
-                    "bot_alert_channel": DEFAULT_BOT_ALERT_CHANNEL,
-                    "inactive_role": DEFAULT_INACTIVE_ROLE,
-                    "graveyard": DEFAULT_GRAVEYARD,
-                    "inactive_time": DEFAULT_INACTIVE_TIME,
-                    "do_user_archive": DEFAULT_DO_USER_ARCHIVE,
-                    "do_voice_archive": DEFAULT_DO_VOICE_ARCHIVE,
-                    "do_text_archive": DEFAULT_DO_TEXT_ARCHIVE,
-                    "inactive_role_permanent": DEFAULT_INACTIVE_ROLE_PERMANENT,
-                    "admin_roles": DEFAULT_ADMIN_ROLES}
+DEFAULT_SETTINGS = {"misc": True,
+                    "bot_alert_channel": "Alerts",
+                    "inactive_role": "dead",
+                    "graveyard": "graveyard",
+                    "inactive_time": 60*60*24*7,
+                    "do_user_archive": False,
+                    "do_voice_archive": False,
+                    "do_text_archive": True,
+                    "inactive_role_permanent": False,
+                    "admin_roles": ["Moderator"]}
 
 load_settings()
 
