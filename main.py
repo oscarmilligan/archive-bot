@@ -642,6 +642,10 @@ async def load_channel_task(channel,last_time):
     delta = int(delta.total_seconds())
     time_left = await calculate_remaining_time(channel)
     if time_left == -1: time_left = 1
+    
+    # Cancel previous task if it exists
+    if channel.id in scheduled_tasks:
+        scheduled_tasks[channel.id].cancel()
     print(f"Creating task for {channel.id} with time left: {time_left}")
     scheduled_tasks[channel.id] = asyncio.create_task(schedule_archive(archive_channel, channel, time_left))
 
@@ -653,6 +657,9 @@ async def load_member_task(member,last_time):
     delta = int(delta.total_seconds())
     time_left = inactive_time - delta
     if time_left <= 0: time_left = 1
+    # Cancel previous task if it exists
+    if member.id in scheduled_tasks:
+        scheduled_tasks[member.id].cancel()
     print(f"Creating task for {member.name} with time left: {time_left}")
     scheduled_tasks[member.id] = asyncio.create_task(schedule_archive(archive_user, member, time_left))
 
