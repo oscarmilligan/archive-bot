@@ -570,6 +570,8 @@ async def archive_channel(channel):
     if channel.type == discord.ChannelType.voice and not do_voice_archive:
         return
     
+    if channel.type == discord.ChannelType.text:
+        last_message_time.pop(channel.id, None)
     print(f"Archiving channel: {channel.name} {channel.id}")
     guild_id = str(channel.guild.id)
     graveyard = server_settings[guild_id]["graveyard"]
