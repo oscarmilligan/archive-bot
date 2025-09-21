@@ -579,6 +579,9 @@ async def archive_channel(channel):
     if channel.category != category:
         await channel.send(f"This channel: {channel} has been archived")
         print(f"Successfully archived: {channel.name} {channel.id}")
+        alert_channel_name = server_settings[guild_id]["bot_alert_channel"]
+        alert_channel = discord.utils.get(channel.guild.channels, name=alert_channel_name)
+        message = await alert_channel.send(f"{channel.mention} has been archived")
     await channel.edit(category=category)
 
 async def archive_user(member):
